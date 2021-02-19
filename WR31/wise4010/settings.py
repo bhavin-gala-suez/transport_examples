@@ -1,20 +1,24 @@
 # Email Settings
-smtp_ip = "10.173.66.124"
-smtp_port = 25
-email_to = ["insightmail@insight.suez.com", "bhavin.gala@suez.com"] # comma separates list of strings, no spaces
-polling_interval = 600 # Time between readings in seconds
+SMTP_IP = "10.173.66.124"
+SMTP_PORT = 25
+EMAIL_SUBJECT = "wisetest"
+EMAIL_FROM = "wisetest@insight.suez.com"
+EMAIL_TO = ["bhavin.gala@suez.com"] # comma separates list of strings, no spaces
+POLLING_INTERVAL = 60 # Time between readings in seconds
 
 
 # Devices
-devices = {
+DEVICES = {
     "device1" : {
-        type = "wise4010",
-        ip = "10.0.0.1",
-        u = 'root',
-        p = '00000000'
+        "type" : "wise4010",
+        "ip" : "192.168.2.5",
+        "u" : 'root',
+        "p" : '00000000'
     },
     "device2" : {
-        type = "wise4010",
-        ip = "10.0.0.2"
+        "type" : "wise4012",
+        "ip" : "192.168.2.6",
+        "u" : 'root',
+        "p" : '00000000'
     }
 }

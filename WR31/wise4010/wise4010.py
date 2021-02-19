@@ -21,37 +21,54 @@ import json
 import csv
 import time
 import logging
+import logging.handlers
 
-logging.basicConfig(level = logging.INFO)
+LOGFILE = "logfile"
 
-from settings import smtp_ip, smtp_port, email_to, polling_interval, devices
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+stdout_handler = logging.StreamHandler(sys.stdout)
+# file_handler = logging.handlers.RotatingFileHandler(LOGFILE, maxBytes = 1000000, backupCount=3) # RotatingFileHandler does not work on WR21 b/c it uses windows based OS
+file_handler = logging.FileHandler(LOGFILE)
+formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+file_handler.setFormatter(formatter)
+
+logger.addHandler(stdout_handler)
+logger.addHandler(file_handler)
+
+from settings import SMTP_IP, SMTP_PORT, EMAIL_SUBJECT, EMAIL_FROM, EMAIL_TO, POLLING_INTERVAL, DEVICES
 
 def isMaxSize(filename, max_size):
-    return max_size > os.path.getsize(filename)
+    return max_size < os.path.getsize(filename)
 
 def poll_and_send(device_name, device_ip, username, password):
     t = int(round(time.time() * 1000)) # get current time in ms, pass as payload in request to get latest messages
 
     base64string = base64.b64encode('%s:%s' % (username, password))
 
-    '''
-    run the 'log_output' request to generate latest log messages
-    '''
-    request = urllib2.Request("http://%s/log_output" % device_ip)
-    request.add_header("Authorization", "Basic %s" % base64string)   
-    result = urllib2.urlopen(request)
+    try: 
+        '''
+        run the 'log_output' request to generate latest log messages
+        '''
+        request = urllib2.Request("http://%s/log_output" % device_ip)
+        request.add_header("Authorization", "Basic %s" % base64string)   
+        result = urllib2.urlopen(request)
 
-    '''
-    run the 'log_message' request to read latest log messages
-    '''
-    request = urllib2.Request("http://%s/log_message" % device_ip)
-    request.add_header("Authorization", "Basic %s" % base64string)   
-    result = urllib2.urlopen(request)
+        '''
+        run the 'log_message' request to read latest log messages
+        '''
+        request = urllib2.Request("http://%s/log_message" % device_ip)
+        request.add_header("Authorization", "Basic %s" % base64string)   
+        result = urllib2.urlopen(request)
+    except urllib2.HTTPError, e:
+        logger.exception("HTTP request failed...")
 
-    # logging.info(result.read())
+
+    # logger.info(result.read())
 
     res = json.load(result)
-    # logging.info(res['LogMsg'])
+    # logger.info(res['LogMsg'])
     datafile = StringIO.StringIO()
     f = csv.writer(datafile)
 
@@ -59,20 +76,20 @@ def poll_and_send(device_name, device_ip, username, password):
     f.writerow(["timestamp", "ch1_D", "ch2_D", "ch3_D", "ch4_D", "ch1_A", "ch2_A", "ch3_A", "ch4_A"])
 
     for x in res["LogMsg"]:
-        # logging.info(x)
-        f.writerow([time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(x["TIM"]))),
+        # logger.info(x)
+        f.writerow([x["TIM"],
                     x['Record'][0][3],
                     x['Record'][1][3],
                     x['Record'][2][3],
                     x['Record'][3][3],
-                    x['Record'][4][3]/1000.0,
-                    x['Record'][6][3]/1000.0,
-                    x['Record'][8][3]/1000.0,
-                    x['Record'][10][3]/1000.0
+                    x['Record'][4][3],
+                    x['Record'][6][3],
+                    x['Record'][8][3],
+                    x['Record'][10][3]
                     ])     
 
     contents = datafile.getvalue()
-    logging.info(contents)
+    logger.debug(contents)
     
     msg = MIMEMultipart()
     msg['From'] = EMAIL_FROM
@@ -85,6 +102,8 @@ def poll_and_send(device_name, device_ip, username, password):
     part.set_payload(datafile.getvalue())
     Encoders.encode_base64(part)
 
+    FILENAME = device_name+".csv"
+
     part.add_header('Content-Disposition', 'attachment; filename="'+FILENAME+'"')
 
     msg.attach(part)
@@ -93,32 +112,93 @@ def poll_and_send(device_name, device_ip, username, password):
     try:
         smtpObj = smtplib.SMTP(SMTP_IP, SMTP_PORT)
         smtpObj.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-        logging.info("Successfully sent email")
+        logger.info("Successfully sent email")
     except Exception, e:
-        logging.info("Failed to send. Exception: %s" %e)
-        traceback.print_exc()
+        logger.exception("Exception while trying to email file")
     return
 
+# TODO
+def validate_settings():
+    pass
 
 if __name__ == '__main__':
-    logging.info('Starting WISE4010 Data Logging + Transmission Application')
+    logger.info('Starting WISE4000 Data Logging + Transmission Application')
 
-    count = 0
+    # TODO: validate settings
+    # validate_settings()
+
+    # '''
+    # For testing
+    # '''
+    # count = 0
     # go = True
     # while go == True:
-    #     if count == 2:
+    #     if count == 1:
     #         go = False
     #     else:
-    #         poll_and_send()
-    #         count += 1
-    #         time.sleep(POLLING_INTERVAL)
-    while True:
-        logging.info(count)
-        poll_and_send()
-        count += 1
-        time.sleep(POLLING_INTERVAL)
-    
+    #         for k,v in DEVICES.items():
+    #             try:
+    #                 logger.info("Attempting poll...")
+    #                 poll_and_send(k, v['ip'], v['u'], v['p'])
+    #             except Exception, e:
+    #                 logger.exception("Exception while trying to poll and send...")
+    #     if isMaxSize(LOGFILE, 1000):
+    #         logger.info("logfile full, flushing...")
+    #         logger.handlers[1].stream.close()
+    #         logger.removeHandler(file_handler)
 
-    logging.info('======================')
-    logging.info('Existing Program')
+    #         tmp_handler = logging.FileHandler(LOGFILE, 'w') # used to flush logfile
+    #         logger.addHandler(tmp_handler)
+    #         logger.info("Started new logfile...")
+            
+    #         logger.handlers[1].stream.close()
+    #         logger.removeHandler(tmp_handler)
+
+    #         file_handler = logging.FileHandler(LOGFILE)
+    #         formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+    #         file_handler.setFormatter(formatter)
+    #         logger.addHandler(file_handler)
+    #         logger.info("logfile flush complete...")
+
+    #     # sleep    
+    #     count += 1
+    #     time.sleep(POLLING_INTERVAL)
+    # '''
+    # testing
+    # '''
+
+    while True:
+        try:
+            for k,v in DEVICES.items():
+                try:
+                    logger.info("Attempting poll of device: "+k)
+                    poll_and_send(k, v['ip'], v['u'], v['p'])
+                except Exception, e:
+                    logger.exception("Exception while trying to poll and send...")
+
+            if isMaxSize(LOGFILE, 10000000):
+                logger.info("logfile full, flushing...")
+                logger.handlers[1].stream.close()
+                logger.removeHandler(file_handler)
+
+                tmp_handler = logging.FileHandler(LOGFILE, 'w') # used to flush logfile
+                logger.addHandler(tmp_handler)
+                logger.info("Started new logfile...")
+                
+                logger.handlers[1].stream.close()
+                logger.removeHandler(tmp_handler)
+
+                file_handler = logging.FileHandler(LOGFILE)
+                formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+                logger.info("logfile flush complete...")
+
+            time.sleep(POLLING_INTERVAL)
+        except Exception, e:
+            logger.exception("Crashed... exiting program...")
+            break
+
+    logger.info('======================')
+    logger.info('Existing Program')
     sys.exit(0)
